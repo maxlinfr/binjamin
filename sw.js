@@ -1,6 +1,6 @@
 // Service worker: lets Binjamin keep working when the Wi-Fi at the bin drops.
 // - app files (html/js/css/art): network first, cache fallback (so refresh-to-iterate still works)
-// - models, wasm, OpenCV, fonts, CDN files: cache first (big + never change)
+// - models, wasm, fonts, CDN files: cache first (big + never change)
 const CACHE = 'binjamin-v1';
 
 self.addEventListener('install', () => self.skipWaiting());

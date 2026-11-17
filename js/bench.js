@@ -1,15 +1,10 @@
-// Classifier bench: run both models on dropped photos, show the final call + why.
+// Classifier bench: run the trash model on dropped photos, show the final call + what it saw.
 import { CONFIG } from './config.js';
-import { initVision, classifyCanvas } from './vision.js';
 import { initClip, classifyClip, clipStatus } from './clip.js';
 import { Ballot } from './bins.js';
 
 const $ = (id) => document.getElementById(id);
 const status = (t) => { $('status').textContent = t; };
-// bench.html?model=imagenet compares against the original general-model-only setup
-const forced = new URLSearchParams(location.search).get('model');
-if (forced) CONFIG.classifier = forced;
-const useClip = CONFIG.classifier !== 'imagenet';
 
 // file name prefix -> expected bin (also understands TrashNet-style class names)
 const EXPECT = {
@@ -24,9 +19,8 @@ canvas.width = canvas.height = 256;
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
 async function ready() {
-  await initVision(status, { classifierOnly: true });
-  if (useClip) await initClip(status);
-  status(`ready. general model + ${useClip ? `trash model (${clipStatus.device}, ${CONFIG.clip.dtype})` : 'no trash model (classifier: imagenet)'}`);
+  await initClip(status);
+  status(`ready. trash model (${clipStatus.device}, ${CONFIG.clip.dtype})`);
 }
 
 function loadImage(file) {
@@ -45,9 +39,7 @@ async function run(file) {
   ctx.drawImage(img, (img.naturalWidth - s) / 2, (img.naturalHeight - s) / 2, s, s, 0, 0, 256, 256);
 
   const ballot = new Ballot();
-  const imagenet = classifyCanvas(canvas);
-  const clip = useClip ? await classifyClip(canvas) : null;
-  ballot.add({ imagenet, clip });
+  ballot.add(await classifyClip(canvas));
   const d = ballot.decide(CONFIG);
 
   const verdict = d.bin === 'confused' ? 'landfill' : d.bin; // confused -> landfill, like the app
@@ -63,9 +55,8 @@ async function run(file) {
     <div class="body">
       <div class="verdict ${d.bin}">${d.bin}${d.item ? ` · ${d.item}` : d.guess ? ` · ${d.guess}?` : ''}
         ${ok === null ? '' : ok ? '<span class="ok">✓</span>' : `<span class="bad">✗ (should be ${expected})</span>`}</div>
-      <div class="src">decided by: ${d.source}${d.bin === 'confused' ? ' → goes to landfill' : ''}</div>
-      ${clip ? `<div class="model"><b>trash model</b>${ballot.clipTop(3).map((c) => `${c.item} <span class="${c.bin}">(${c.bin})</span> ${c.p.toFixed(2)}`).join('<br>')}</div>` : ''}
-      <div class="model"><b>general model</b>${ballot.topRaw(3).map(([k, v]) => `${k} ${v.toFixed(2)}`).join('<br>') || '-'}</div>
+      <div class="src">${d.bin === 'confused' ? `not sure (best bin only ${d.conf.toFixed(2)}) → goes to landfill` : `bin total ${d.conf.toFixed(2)}`}</div>
+      <div class="model"><b>trash model saw</b>${ballot.clipTop(4).map((c) => `${c.item} <span class="${c.bin}">(${c.bin})</span> ${c.p.toFixed(2)}`).join('<br>')}</div>
     </div>`;
   $('grid').prepend(card);
 }
@@ -85,7 +76,7 @@ async function handle(files) {
     try { await run(list[i]); } catch (e) { console.warn(list[i].name, e); }
     summarize();
   }
-  status(`done. ${useClip ? `trash model: ~${clipStatus.ms.toFixed(0)} ms/photo` : ''}`);
+  status(`done. trash model: ~${clipStatus.ms.toFixed(0)} ms/photo`);
 }
 
 const drop = $('drop');

@@ -1,7 +1,6 @@
 // Binjamin boot + main loop.
 import { CONFIG, settings, saveSettings, resetSettings, otherSide, toUserX } from './config.js';
 import * as V from './vision.js';
-import { loadOpenCV, MotionTracker } from './motion.js';
 import { UI, toast } from './ui.js';
 import { Brain, STATES } from './brain.js';
 import { Setup } from './setup.js';
@@ -11,26 +10,19 @@ import { initClip, classifyClip } from './clip.js';
 
 const video = document.getElementById('cam');
 const ui = new UI();
-let motion = null;
-let motionError = null;
 let visionReady = false;
+let modelsDone = false; // all models loaded (or failed): ok to leave the loading screen
 let mode = 'boot'; // 'setup' | 'run'
 let lastRawHand = null;
 let lastVideoTime = -1;
 let frameN = 0;
 
-let clipReady = false;
-const useClip = CONFIG.classifier !== 'imagenet';
-
-// One examining sample: crop around the hand, ask the general model (fast, sync),
-// then MobileCLIP on the same crop (slower, async) if it's loaded.
+// One examining sample: find the object in the hand (or fall back to the hand itself),
+// crop it, ask the trash model. Async: the brain keeps one sample in flight at a time.
 const brain = new Brain(ui, (n) => {
-  const scales = CONFIG.classify.cropScales;
-  const imagenet = V.classifyAround(video, lastRawHand?.box, scales[n % scales.length]);
-  if (!useClip || !clipReady) return imagenet ? { imagenet } : null;
-  return classifyClip(V.lastCrop)
-    .then((clip) => ({ imagenet, clip }))
-    .catch((e) => { console.warn('[clip]', e); return imagenet ? { imagenet } : null; });
+  if (n === 0) V.forgetObject();
+  if (!V.cropHeld(video, lastRawHand?.box, n)) return null;
+  return classifyClip(V.lastCrop);
 });
 
 const startCamera = async () => {
@@ -41,10 +33,9 @@ const startCamera = async () => {
 const setup = new Setup({
   video,
   startCamera,
-  motionReady: () => !!motion,
   onDone: () => {
     mode = 'run';
-    brain.go(visionReady ? 'idle' : 'loading');
+    brain.go(modelsDone ? 'idle' : 'loading');
   },
 });
 
@@ -97,15 +88,10 @@ function loop(now) {
     try { face = V.detectFace(video, now); } catch (e) { console.warn(e); }
   }
 
-  let m = null;
-  if (motion && frameN % CONFIG.motion.every === 0) {
-    try { m = motion.update(video); } catch (e) { console.warn('[motion] disabled', e); motion = null; motionError = e; }
-  }
-
-  const p = { hand, motion: m, face };
+  const p = { hand, face };
   if (mode === 'setup') setup.onFrame(now, p);
   else if (mode === 'run') brain.tick(now, p);
-  debug.draw(now, p, { motionReady: !!motion, motionError });
+  debug.draw(now, p);
 }
 
 // ---------------- input ----------------
@@ -152,13 +138,8 @@ async function boot() {
     navigator.serviceWorker.register('sw.js').catch((e) => console.warn('[sw]', e));
   }
 
-  // debug switches: ?nocv (skip OpenCV) / ?novision (skip MediaPipe)
+  // debug switch: ?novision (skip all the models, for testing art/states by hand)
   const params = new URLSearchParams(location.search);
-  if (!params.has('nocv')) {
-    loadOpenCV()
-      .then(({ cv }) => { motion = new MotionTracker(cv); console.log('[opencv] ready'); })
-      .catch((e) => { motionError = e; console.warn('[opencv] unavailable, hand-only tracking', e); });
-  }
 
   const visionP = (params.has('novision') ? Promise.reject(new Error('disabled by ?novision')) : V.initVision((msg) => ui.status(msg)))
     .then(() => { visionReady = true; })
@@ -174,14 +155,12 @@ async function boot() {
   }
 
   await visionP;
-  // MobileCLIP loads in the background; until it's ready, the general model handles everything
-  if (useClip && !params.has('novision')) {
-    initClip()
-      .then(() => { clipReady = true; console.log('[clip] ready'); })
-      .catch((e) => { console.warn('[clip] unavailable, using the general model only', e); toast('trash model failed to load, using the general one'); });
+  // the trash model is the slow download (23 MB, cached after the first visit): stay sleepy until it's in
+  if (!params.has('novision')) {
+    try { await initClip((msg) => ui.status(msg)); console.log('[clip] ready'); }
+    catch (e) { console.error('[clip]', e); toast(`trash model failed to load: ${e.message}`, 10000); }
   }
-  // no face model? fall back to waking up on motion
-  if (CONFIG.face.enabled && V.status.face !== true) CONFIG.motion.noticeByMotion = true;
+  modelsDone = true;
   if (mode === 'run' && brain.state === 'loading') brain.go('idle');
 }
 

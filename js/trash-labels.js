@@ -50,7 +50,7 @@ export const TRASH_LABELS = [
   ['nottrash', 'reusable bottle', 'a reusable metal water bottle', 'a Hydro Flask', 'a Stanley tumbler'],
   ['nottrash', 'watch', 'a wristwatch', 'an Apple Watch'],
 
-  // ---------------- nothing (-> falls back to the general model) ----------------
+  // ---------------- nothing (empty hand -> confused) ----------------
   ['nothing', 'nothing', 'an empty hand', 'an open palm', 'a hand with nothing in it', 'a person\'s face', 'a blurry photo of a room'],
 ];
 

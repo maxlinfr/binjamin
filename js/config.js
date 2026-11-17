@@ -32,36 +32,41 @@ export const CONFIG = {
     stareRelax: true,       // someone staring at him too? size limit x0.7 and hold time x0.6
   },
 
-  // Which classifier(s) to use:
-  //   'clip+imagenet' = MobileCLIP trash list first, general ImageNet model as fallback + troll check (recommended)
-  //   'imagenet'      = only the general ImageNet model + js/bins.js lookup (the original v0)
-  classifier: 'clip+imagenet',
-
+  // The trash model: MobileCLIP picks from the list in js/trash-labels.js.
   clip: {
     model: 'Xenova/mobileclip_s0',
     dtype: 'fp16',          // fp16 = 23 MB download, same accuracy as fp32 (45 MB).
                             // DON'T use 'q8': it breaks this model (10% accuracy vs 76% in tests).
     device: 'wasm',         // 'wasm' works everywhere. Try 'webgpu' on newer iPads (falls back to wasm).
-    minConfidence: 0.6,     // CLIP must be this sure of a bin (averaged over frames), else ask the general model
-    nottrashVeto: 0.25,     // general model sees a phone/wallet/etc. at this avg score -> "not trash", always
+    minConfidence: 0.6,     // a bin's labels must add up to this (averaged over frames), else "confused" -> landfill
+    nottrashMin: 0.4,       // lower bar for "not trash" (phone, Hydro Flask...): better to wrongly say "that's yours"
+                            // than to send someone's water bottle to landfill
     logitScale: 100,        // CLIP's standard temperature. Lower = less confident, more spread out.
   },
 
   classify: {
     minFrames: 3,           // need at least this many votes before deciding (trash model: ~250ms each)
-    minEvidence: 0.12,      // avg matched-label score per frame; below = confused
-    minShare: 0.6,          // winning bin's share of votes; below = confused
-    cropScales: [2.4, 3.4], // crop size around the hand (x hand size), alternated per frame
+    cropScales: [2.4, 3.4], // crop size around the hand (x hand size), alternated. Used when no object is found.
   },
 
-  motion: {
-    width: 160, height: 120, // OpenCV works on a tiny downscaled frame
-    every: 2,               // run motion every N camera frames
-    threshold: 28,          // pixel diff threshold (0-255)
-    blobMin: 0.004,         // min blob area (fraction of frame) to count as movement
-    presence: 0.03,         // total moving area that counts as "someone is here"
-    lightingJump: 0.6,      // ignore frames where more than this much changes (auto-exposure)
-    noticeByMotion: false,  // let general motion wake Binjamin up (off: faces do it now)
+  // Find the held object (the hand is just the waypoint), then crop around the OBJECT, not the hand.
+  // MediaPipe Object Detector (EfficientDet-Lite0) knows 80 everyday things: bottle, cup, fork, spoon,
+  // bowl, banana, apple, sandwich, pizza, donut, cell phone, book... It only supplies the BOX; the trash
+  // model still names it. Things it doesn't know (wrappers, napkins) -> crop around the hand like before.
+  object: {
+    enabled: true,
+    minScore: 0.2,          // detector confidence. Low on purpose: we only need where it is, not what it is
+    searchScale: 5,         // search a window this many hand-sizes wide, centered on the hand
+    minTouch: 0.2,          // object box must overlap the hand this much (held things are under the fingers)
+    maxSizeVsHand: 9,       // ignore boxes way bigger than the hand (tables, bins, the wall)
+    minSizeVsHand: 0.06,    // ...and tiny specks
+    cropPads: [1.3, 1.7],   // crop = object box x this (tight / loose), alternated per frame
+    holdMs: 700,            // detector missed a frame? keep using the last box (moved with the hand) this long
+    // never treat these as "the thing in your hand"
+    ignore: ['person', 'chair', 'couch', 'bed', 'dining table', 'toilet', 'tv', 'bench', 'potted plant',
+      'refrigerator', 'oven', 'sink', 'car', 'bicycle', 'motorcycle', 'bus', 'truck', 'train', 'airplane',
+      'boat', 'traffic light', 'fire hydrant', 'stop sign', 'parking meter', 'bird', 'cat', 'dog', 'horse',
+      'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe'],
   },
 
   // Face / stare detection (MediaPipe Face Landmarker). No identity, just "is someone looking at me".
@@ -81,8 +86,7 @@ export const CONFIG = {
   },
 
   compliance: {
-    enabled: true,          // track where the item went and react (happy / sad)
-    motionWeight: 0.6,      // blend of OpenCV motion vs last hand position for exit side
+    enabled: true,          // track where the item went (the hand's last position) and react (happy / sad)
   },
 
   art: { frameMs: 260 },    // wobble speed for multi-frame drawings
@@ -98,13 +102,11 @@ export const URLS = {
     'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'],
   handModel: ['models/hand_landmarker.task',
     'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'],
-  classifierModel: ['models/efficientnet_lite0.tflite',
-    'https://storage.googleapis.com/mediapipe-models/image_classifier/efficientnet_lite0/int8/1/efficientnet_lite0.tflite'],
+  objectModel: ['models/efficientdet_lite0.tflite',
+    'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/1/efficientdet_lite0.tflite'],
   transformers: ['vendor/transformers/transformers.min.js',
     'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2/dist/transformers.min.js'],
   trashEmbeddings: 'models/trash-text-embeddings.json', // built by `npm run labels`
-  opencv: ['vendor/opencv/opencv.js',
-    'https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js'],
 };
 
 // ---------- saved settings (from the setup screen) ----------

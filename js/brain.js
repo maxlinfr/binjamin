@@ -2,7 +2,7 @@
 //
 //   idle ──stare/hand──▶ noticed ──hand held still──▶ examining ──vote ~1.3s──▶ recycle | landfill | confused | nottrash
 //                                                                                   │
-//                       happy ◀── item left on the correct side ──┤ (OpenCV + hand tracking)
+//                       happy ◀── item left on the correct side ──┤ (where the hand was last seen)
 //                       sad   ◀── item left on the wrong side   ──┘
 //
 // Low confidence is a feature: "confused" points at landfill.
@@ -15,7 +15,7 @@ export const STATES = ['idle', 'noticed', 'examining', 'recycle', 'landfill', 'c
 export class Brain {
   constructor(ui, classify) {
     this.ui = ui;
-    this.classify = classify; // (sampleIndex) => categories | null
+    this.classify = classify; // (sampleIndex) => Promise<trash model result> | null
     this.auto = true;
     this.state = null;
     this.enteredAt = 0;
@@ -24,7 +24,6 @@ export class Brain {
     this.handLast = -1e9;
     this.hand = { present: false };
     this.handTrack = []; // {t, x, y} in user coords
-    this.motionTrack = []; // {t, x, area}
     this.needClear = false;
     this.clearSince = 0;
     this.face = { present: false };
@@ -76,7 +75,7 @@ export class Brain {
     if (on) this.go('idle');
   }
 
-  // p = { hand: {present, x, y}, motion: {...} | null }, or null if no new camera frame.
+  // p = { hand: {present, x, y, size}, face: {...} | null }, or null if no new camera frame.
   tick(now, p) {
     const T = CONFIG.timing;
     if (p) {
@@ -88,11 +87,7 @@ export class Brain {
       } else {
         this.handSince = 0;
       }
-      const m = p.motion;
-      this.motion = m || this.motion;
-      if (m?.blob) this.motionTrack.push({ t: now, x: m.blob.x, y: m.blob.y, area: m.blob.area });
       while (this.handTrack.length && now - this.handTrack[0].t > 2500) this.handTrack.shift();
-      while (this.motionTrack.length && now - this.motionTrack[0].t > 2500) this.motionTrack.shift();
       if (p.face) {
         this.face = p.face;
         if (p.face.staring) {
@@ -143,10 +138,8 @@ export class Brain {
 
       case 'idle': {
         if (this.needClear) break;
-        const busy = p?.motion && !p.motion.lightingJump && p.motion.total > CONFIG.motion.presence;
         if (held > H.noticeMs) this.go('noticed', {}, now);
         else if (F.enabled && !this.faceNeedsReset && stare.ms > F.stareMs) this.go('noticed', { line: 'stared', byFace: true }, now);
-        else if (CONFIG.motion.noticeByMotion && busy && age > 1500) this.go('noticed', { byMotion: true }, now);
         else if (age > T.idleLineMs) this.go('idle', {}, now); // fidget: new line + drawing
         break;
       }
@@ -174,15 +167,13 @@ export class Brain {
         if (!this.sampling && hand.present && q.still && p && now - this.lastSample >= T.examineIntervalMs) {
           this.lastSample = now;
           const res = this.classify(this.sampleN++);
-          if (res && typeof res.then === 'function') {
-            // async (MobileCLIP): one sample in flight at a time; drop results from an older exam
+          if (res) {
+            // one sample in flight at a time; drop results from an older exam
             const exam = this.examId;
             this.sampling = true;
-            res.then((r) => { if (r && exam === this.examId) this.ballot.add(r); })
+            Promise.resolve(res).then((r) => { if (r && exam === this.examId) this.ballot.add(r); })
               .catch((e) => console.warn('[classify]', e))
               .finally(() => { if (exam === this.examId) this.sampling = false; });
-          } else if (res) {
-            this.ballot.add(res);
           }
         }
         const enough = this.ballot.frames >= CONFIG.classify.minFrames;
@@ -261,24 +252,14 @@ export class Brain {
     this.go(state, { ...d, targetBin, targetSide: sideOfBin(targetBin) }, now);
   }
 
-  // Where did the item go? Last hand position (+ a bit of its velocity),
-  // blended with the OpenCV motion blob right after the hand vanished.
+  // Where did the item go? Last hand position, nudged by which way it was moving as it left the frame.
   exitSide() {
     const hl = this.handLast;
     const pts = this.handTrack.filter((p) => p.t > hl - 400 && p.t >= this.enteredAt - 1500);
     if (!pts.length) return null;
     const a = pts[0], b = pts[pts.length - 1];
     const vx = (b.x - a.x) / Math.max(1, b.t - a.t);
-    let x = b.x + clamp(vx * 250, -0.25, 0.25);
-    let source = 'hand';
-    const mv = this.motionTrack.filter((m) => m.t >= hl - 100 && m.t <= hl + CONFIG.timing.exitMs + 50);
-    if (mv.length) {
-      const wsum = mv.reduce((s, m) => s + m.area, 0);
-      const mx = mv.reduce((s, m) => s + m.x * m.area, 0) / wsum;
-      const k = CONFIG.compliance.motionWeight;
-      x = (1 - k) * x + k * mx;
-      source = 'hand+motion';
-    }
-    return { side: x < settings.midline ? 'left' : 'right', x, source };
+    const x = b.x + clamp(vx * 250, -0.25, 0.25);
+    return { side: x < settings.midline ? 'left' : 'right', x };
   }
 }

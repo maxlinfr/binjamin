@@ -1,10 +1,10 @@
-// Debug overlay: what the camera sees, hand box, motion blob, midline, votes,
+// Debug overlay: what the camera sees, face/hand/object boxes, midline, trash model votes,
 // plus tap buttons to force any state (the week-1 "step through by hand" panel).
 // Toggle: press D, or triple-tap the top-left corner.
 
 import { CONFIG, settings, saveSettings, toUserX } from './config.js';
 import { STATES } from './brain.js';
-import { lastCrop, status } from './vision.js';
+import { lastCrop, status, cropInfo } from './vision.js';
 import { clipStatus } from './clip.js';
 
 const $ = (id) => document.getElementById(id);
@@ -69,7 +69,7 @@ export class Debug {
     if (now - this.fpsT > 1000) { this.fps = this.frames; this.frames = 0; this.fpsT = now; }
   }
 
-  draw(now, p, extra) {
+  draw(now, p) {
     if (!this.visible || now - this.lastDraw < 66) return;
     this.lastDraw = now;
     const { ctx, canvas, brain } = this;
@@ -104,40 +104,41 @@ export class Debug {
       ctx.strokeRect(Math.min(xa, xb) * w, f.box.y0 * h, Math.abs(xb - xa) * w, (f.box.y1 - f.box.y0) * h);
       if (f.staring) { ctx.fillStyle = '#39e6ff'; ctx.font = 'bold 13px monospace'; ctx.fillText('STARING', Math.min(xa, xb) * w + 4, f.box.y0 * h - 4); }
     }
+    // the object found in the hand (orange) = what got cropped. Shown for 1.5s after the last sample.
+    if (cropInfo.box && performance.now() - cropInfo.at < 1500) {
+      const b = cropInfo.box, xa = toUserX(b.x0), xb = toUserX(b.x1);
+      ctx.strokeStyle = '#ff9f1c'; ctx.lineWidth = 3;
+      if (cropInfo.source !== 'object') ctx.setLineDash([5, 4]);
+      ctx.strokeRect(Math.min(xa, xb) * w, b.y0 * h, Math.abs(xb - xa) * w, (b.y1 - b.y0) * h);
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#ff9f1c'; ctx.font = 'bold 12px monospace';
+      ctx.fillText(cropInfo.label, Math.min(xa, xb) * w + 3, b.y1 * h - 4);
+    }
     // hand trail
     ctx.fillStyle = '#ff5c8a';
     for (const t of brain.handTrack) ctx.fillRect(t.x * w - 2, t.y * h - 2, 4, 4);
-    // motion blob + trail
-    ctx.fillStyle = '#3cff8f';
-    for (const m of brain.motionTrack) ctx.fillRect(m.x * w - 2, m.y * h - 2, 4, 4);
-    if (p?.motion?.blob) {
-      ctx.strokeStyle = '#3cff8f'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(p.motion.blob.x * w, p.motion.blob.y * h, 6 + Math.sqrt(p.motion.blob.area) * 90, 0, 7); ctx.stroke();
-    }
     // last exit estimate
     if (brain.lastExit) {
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.moveTo(brain.lastExit.x * w, h - 20); ctx.lineTo(brain.lastExit.x * w, h); ctx.stroke();
     }
-    // what the classifier saw
+    // what the trash model saw
     ctx.drawImage(lastCrop, w - 72, 4, 68, 68);
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(w - 72, 4, 68, 68);
 
     const d = brain.lastDecision;
-    const top = brain.ballot.topRaw(4).map(([k, v]) => `  ${k} ${v.toFixed(2)}`).join('\n');
+    const ok = (v) => (v === true ? 'ok' : v || '…');
     this.text.textContent = [
-      `state: ${brain.state}  ${brain.auto ? 'AUTO' : 'MANUAL (press A)'}`,
-      `fps: ${this.fps}  hands: ${status.hands ? status.delegate : '…'}  face: ${status.face === true ? 'ok' : status.face || '…'}  clf: ${status.classifier ? 'ok' : '…'}  opencv: ${extra.motionReady ? 'ok' : extra.motionError ? 'failed' : '…'}`,
+      `state: ${brain.state}  ${brain.auto ? 'AUTO' : 'MANUAL (press A)'}${brain.needClear ? '  (waiting for hand to leave)' : ''}`,
+      `fps: ${this.fps}  hands: ${status.hands ? status.delegate : '…'}  face: ${ok(status.face)}  objects: ${CONFIG.object.enabled ? ok(status.detector) : 'off'}`
+        + `  trash model: ${clipStatus.ready ? `ok (${clipStatus.device}, ${clipStatus.ms.toFixed(0)}ms/frame)` : clipStatus.error ? 'FAILED' : 'loading…'}`,
       faceLine(brain),
       `recycle: ${settings.recycleSide}  midline: ${settings.midline.toFixed(2)}`,
       handLine(brain),
-      `motion: ${p?.motion ? p.motion.total.toFixed(3) : '-'}${brain.needClear ? '  (waiting for hand to leave)' : ''}`,
-      `trash model: ${clipStatus.ready ? `ok (${clipStatus.device}, ${clipStatus.ms.toFixed(0)}ms/frame)` : clipStatus.error ? 'failed' : CONFIG.classifier === 'imagenet' ? 'off' : 'loading…'}`,
-      d ? `last: ${d.bin}${d.item ? ` (${d.item})` : ''} via ${d.source || '-'}  conf ${d.evidence.toFixed(2)}  frames ${d.frames}` : 'last: -',
-      `trash model saw: ${brain.ballot.clipTop(3).map((c) => `${c.item} ${c.p.toFixed(2)}`).join(' | ') || '-'}`,
-      `general votes: R ${brain.ballot.votes.recycle.toFixed(2)}  L ${brain.ballot.votes.landfill.toFixed(2)}  N ${brain.ballot.votes.nottrash.toFixed(2)}`,
-      brain.lastExit ? `exit: ${brain.lastExit.side} x=${brain.lastExit.x.toFixed(2)} via ${brain.lastExit.source}` : 'exit: -',
-      'general model saw:', top || '  -',
+      `crop: ${cropInfo.source === 'hand' ? 'around the hand (no object found)' : `on ${cropInfo.label} ${cropInfo.conf.toFixed(2)}${cropInfo.source === 'object' ? '' : ' (remembered)'}`}`,
+      d ? `last: ${d.bin}${d.item ? ` (${d.item})` : d.guess ? ` (${d.guess}?)` : ''}  conf ${d.conf.toFixed(2)}  frames ${d.frames}` : 'last: -',
+      `trash model saw: ${brain.ballot.clipTop(4).map((c) => `${c.item} ${c.p.toFixed(2)}`).join(' | ') || '-'}`,
+      brain.lastExit ? `exit: ${brain.lastExit.side} x=${brain.lastExit.x.toFixed(2)}` : 'exit: -',
     ].join('\n');
   }
 }
