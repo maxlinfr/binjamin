@@ -16,6 +16,8 @@ export const LINES = {
     'i was a hamster once. now i am this',
   ],
   noticed: ['ooh whatchu got', 'oh hi!! show me', 'is that trash?? for me??', 'hold it up hold it up', 'ooh ooh lemme see'],
+  stared: ['why u staring', 'oh hi 👀', 'i see u.', 'u looking at me?', 'hi. got trash?', 'ooh a visitor'],
+  nudge: ['hold it up to me!!', 'show me the trash', 'u gonna show me or...', 'come closer w the trash'],
   examining: ['hmmmm....', 'lemme see...', 'investigating...', 'hmm. hmm. hmmmm.', 'zooming in...'],
   recycle: ['RECYCLE!! {arrow}', 'recycle that {arrow}', 'RECYCLING {arrow} GO GO', 'that\'s recycling {arrow}'],
   landfill: ['LANDFILL {arrow}', 'landfill, sorry {arrow}', 'that one\'s landfill {arrow}', 'trash trash {arrow}'],

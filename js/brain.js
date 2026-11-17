@@ -1,6 +1,6 @@
 // Binjamin's brain: a hand-written state machine. No learning, just vibes + timers.
 //
-//   idle ──hand/motion──▶ noticed ──hand held still──▶ examining ──vote ~1.3s──▶ recycle | landfill | confused | nottrash
+//   idle ──stare/hand──▶ noticed ──hand held still──▶ examining ──vote ~1.3s──▶ recycle | landfill | confused | nottrash
 //                                                                                   │
 //                       happy ◀── item left on the correct side ──┤ (OpenCV + hand tracking)
 //                       sad   ◀── item left on the wrong side   ──┘
@@ -27,6 +27,12 @@ export class Brain {
     this.motionTrack = []; // {t, x, area}
     this.needClear = false;
     this.clearSince = 0;
+    this.face = { present: false };
+    this.stareSince = 0;
+    this.lastStare = -1e9;
+    this.faceNeedsReset = false; // after a reaction, the person must look away before a stare re-wakes him
+    this.notStareSince = 0;
+    this.nudged = false;
     this.ballot = new Ballot();
     this.lastDecision = null;
     this.lastExit = null;
@@ -36,7 +42,15 @@ export class Brain {
     this.state = state;
     this.enteredAt = now;
     this.info = info;
+    if (state === 'noticed') this.nudged = false;
+    if (state === 'happy' || state === 'sad' || state === 'nottrash' || info.line === 'bye') this.faceNeedsReset = true;
     this.ui.show(state, info);
+  }
+
+  // Is someone staring right now, and for how long? (blinks shorter than graceMs don't count)
+  staring(now) {
+    const on = now - this.lastStare <= CONFIG.face.graceMs;
+    return { on, ms: on ? now - this.stareSince : 0 };
   }
 
   // Manual override (keyboard / dev buttons). Pauses the automatic brain.
@@ -75,8 +89,25 @@ export class Brain {
       if (m?.blob) this.motionTrack.push({ t: now, x: m.blob.x, y: m.blob.y, area: m.blob.area });
       while (this.handTrack.length && now - this.handTrack[0].t > 2500) this.handTrack.shift();
       while (this.motionTrack.length && now - this.motionTrack[0].t > 2500) this.motionTrack.shift();
+      if (p.face) {
+        this.face = p.face;
+        if (p.face.staring) {
+          if (now - this.lastStare > CONFIG.face.graceMs) this.stareSince = now; // a new stare begins
+          this.lastStare = now;
+        }
+      }
     }
     const hand = this.hand;
+    const F = CONFIG.face;
+    const stare = this.staring(now);
+
+    if (this.faceNeedsReset) {
+      if (stare.on) this.notStareSince = 0;
+      else {
+        if (!this.notStareSince) this.notStareSince = now;
+        if (now - this.notStareSince > F.resetMs) this.faceNeedsReset = false;
+      }
+    }
 
     if (this.needClear) {
       if (hand.present) this.clearSince = 0;
@@ -98,17 +129,25 @@ export class Brain {
         if (this.needClear) break;
         const busy = p?.motion && !p.motion.lightingJump && p.motion.total > CONFIG.motion.presence;
         if (held > T.noticeMs) this.go('noticed', {}, now);
+        else if (F.enabled && !this.faceNeedsReset && stare.ms > F.stareMs) this.go('noticed', { line: 'stared', byFace: true }, now);
         else if (CONFIG.motion.noticeByMotion && busy && age > 1500) this.go('noticed', { byMotion: true }, now);
         else if (age > T.idleLineMs) this.go('idle', {}, now); // fidget: new line + drawing
         break;
       }
 
-      case 'noticed':
-        if (held > T.settleMs) this.startExam(now);
-        else if (!hand.present && now - this.handLast > T.noticedTimeoutMs && age > T.noticedTimeoutMs) {
-          this.go('idle', {}, now);
+      case 'noticed': {
+        if (held > T.settleMs) { this.startExam(now); break; }
+        // still being looked at? then keep waiting for the trash
+        const watching = stare.on || now - this.lastStare < F.lookAwayMs;
+        if (watching && !hand.present && !this.nudged && age > 3500) {
+          this.nudged = true;
+          this.ui.sayLine('nudge');
         }
+        const handGone = !hand.present && now - this.handLast > T.noticedTimeoutMs && age > T.noticedTimeoutMs;
+        if (handGone && !watching) this.go('idle', {}, now);
+        else if (handGone && age > 15000) { this.faceNeedsReset = true; this.go('idle', { line: 'bye' }, now); }
         break;
+      }
 
       case 'examining': {
         if (!hand.present && now - this.handLast > T.lostHandMs) {

@@ -4,9 +4,11 @@
 import { CONFIG, URLS, firstAvailable, clamp } from './config.js';
 
 let hands = null;
+let face = null;
 let classifier = null;
 let lastTs = -1;
-export const status = { hands: false, classifier: false, delegate: '-' };
+let lastFaceTs = -1;
+export const status = { hands: false, face: false, classifier: false, delegate: '-' };
 
 const crop = document.createElement('canvas');
 crop.width = crop.height = 256;
@@ -40,6 +42,25 @@ export async function initVision(progress = () => {}) {
     minTrackingConfidence: 0.5,
   }, true);
   hands = h.task; status.hands = true; status.delegate = h.delegate;
+
+  if (CONFIG.face.enabled) {
+    progress('learning what faces look like...');
+    try {
+      const fc = await create(tv.FaceLandmarker, fileset, {
+        baseOptions: { modelAssetPath: await firstAvailable(URLS.faceModel) },
+        runningMode: 'VIDEO',
+        numFaces: 1,
+        outputFaceBlendshapes: true, // eye-look scores = gaze
+        minFaceDetectionConfidence: 0.5,
+        minFacePresenceConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+      }, true);
+      face = fc.task; status.face = true;
+    } catch (e) {
+      console.warn('[vision] face landmarker unavailable, falling back to motion wake-up', e);
+      status.face = 'failed';
+    }
+  }
 
   progress('learning what trash looks like...');
   const c = await create(tv.ImageClassifier, fileset, {
@@ -82,6 +103,47 @@ export function detectHands(video, now) {
     x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
   }
   return { present: true, box: { x0, y0, x1, y1 }, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, landmarks: lm };
+}
+
+// Is someone staring at Binjamin? Face detection + head turn + eye direction.
+// No identity, nothing stored: just geometry for this frame.
+// -> null (not ready) | { present:false } | { present:true, staring, box, size, yaw, gazeSide, gazeUp, gazeDown, blink }
+export function detectFace(video, now) {
+  if (!face || video.readyState < 2) return null;
+  const ts = Math.max(Math.round(now), lastFaceTs + 1);
+  lastFaceTs = ts;
+  const res = face.detectForVideo(video, ts);
+  const lm = res.faceLandmarks?.[0];
+  if (!lm) return { present: false };
+
+  let x0 = 1, y0 = 1, x1 = 0, y1 = 0;
+  for (const p of lm) {
+    x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y);
+    x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+  }
+  // head turn: where the nose tip sits between the two cheek edges (0 = facing the camera)
+  const cheekL = lm[234], cheekR = lm[454], nose = lm[1];
+  const span = Math.abs(cheekR.x - cheekL.x) || 1e-6;
+  const yaw = Math.abs((nose.x - (cheekL.x + cheekR.x) / 2) / span);
+
+  // eye direction from ARKit-style blendshapes
+  const bs = {};
+  for (const c of res.faceBlendshapes?.[0]?.categories || []) bs[c.categoryName] = c.score;
+  const avg = (a, b) => ((bs[a] || 0) + (bs[b] || 0)) / 2;
+  const gazeSide = Math.max(avg('eyeLookOutLeft', 'eyeLookInRight'), avg('eyeLookInLeft', 'eyeLookOutRight'));
+  const gazeUp = avg('eyeLookUpLeft', 'eyeLookUpRight');
+  const gazeDown = avg('eyeLookDownLeft', 'eyeLookDownRight');
+  const blink = avg('eyeBlinkLeft', 'eyeBlinkRight');
+
+  const F = CONFIG.face;
+  const size = x1 - x0;
+  const staring = size >= F.minSize && yaw <= F.maxYaw && gazeSide <= F.maxGazeSide
+    && gazeUp <= F.maxGazeUp && gazeDown <= F.maxGazeDown && blink <= F.maxBlink;
+
+  return {
+    present: true, staring, box: { x0, y0, x1, y1 }, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2,
+    size, yaw, gazeSide, gazeUp, gazeDown, blink,
+  };
 }
 
 // Classify a square crop around the hand (= the thing being held), not the whole scene.

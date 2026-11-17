@@ -6,10 +6,11 @@ Everything runs in Safari on the iPad: no app, no server, no cloud.
 
 | Piece | What it does |
 |---|---|
+| MediaPipe Face Landmarker | wakes him up when someone **stares** at him (head facing + eyes on him). Detection only, no identity, nothing stored |
 | MediaPipe Hand Landmarker | finds the hand holding the item |
 | MediaPipe Image Classifier (EfficientNet-Lite0, ImageNet) | classifies a crop around the hand, voted over ~1.3s |
 | [js/bins.js](js/bins.js) | ImageNet label → recycle / landfill / "that's your phone bro" |
-| OpenCV.js | frame-diff motion: wakes him up, setup wave test, tracks which side the item went |
+| OpenCV.js | frame-diff motion: setup wave test, tracks which side the item went (and wakes him up if the face model fails) |
 | [js/brain.js](js/brain.js) | hand-written state machine (idle → noticed → examining → verdict → happy/sad) |
 
 ## Run it
@@ -55,6 +56,8 @@ Placeholder hamsters are drawn in code. Replace them by dropping PNGs into `art/
 ## Tuning
 
 All the knobs are in [js/config.js](js/config.js) (timings, confidence thresholds, motion sensitivity, crop size), and all his lines are in [js/copy.js](js/copy.js). Use the debug overlay at the real bin to tune; it shows the labels the classifier is actually seeing.
+
+**Stare tuning:** the debug `face:` line shows each stare check (size, head turn, eye direction, blink) and puts a `!` after whichever one is failing. Adjust the matching limit in `CONFIG.face`. The cyan box means STARING; grey means a face that isn't looking at him.
 
 ## Known limits (v0)
 

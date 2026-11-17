@@ -33,7 +33,23 @@ export const CONFIG = {
     blobMin: 0.004,         // min blob area (fraction of frame) to count as movement
     presence: 0.03,         // total moving area that counts as "someone is here"
     lightingJump: 0.6,      // ignore frames where more than this much changes (auto-exposure)
-    noticeByMotion: true,   // let general motion wake Binjamin up (not just hands)
+    noticeByMotion: false,  // let general motion wake Binjamin up (off: faces do it now)
+  },
+
+  // Face / stare detection (MediaPipe Face Landmarker). No identity, just "is someone looking at me".
+  face: {
+    enabled: true,          // a stare wakes Binjamin up ("why u staring")
+    every: 3,               // run face detection every N camera frames (~10/sec)
+    stareMs: 600,           // must stare this long to count
+    graceMs: 350,           // blinks / flickers shorter than this don't break a stare
+    lookAwayMs: 2000,       // in "noticed", stop waiting this long after they look away
+    resetMs: 800,           // after a reaction, must look away this long before a stare wakes him again
+    minSize: 0.12,          // face width as fraction of frame; smaller = too far away (passersby)
+    maxYaw: 0.18,           // head turn (0 = facing camera, ~0.5 = full profile)
+    maxGazeSide: 0.5,       // eyes looking sideways (0-1 blendshape)
+    maxGazeUp: 0.5,
+    maxGazeDown: 0.75,      // lenient: people look DOWN at an iPad mounted at bin height
+    maxBlink: 0.7,
   },
 
   compliance: {
@@ -50,6 +66,8 @@ export const URLS = {
     'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs'],
   wasmBase: ['vendor/mediapipe/wasm',
     'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'],
+  faceModel: ['models/face_landmarker.task',
+    'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'],
   handModel: ['models/hand_landmarker.task',
     'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'],
   classifierModel: ['models/efficientnet_lite0.tflite',

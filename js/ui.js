@@ -85,6 +85,8 @@ export class UI {
     }
   }
 
+  sayLine(key) { this.say(pickLine(key)); }
+
   say(text) {
     this.speechText.textContent = text;
     this.speech.style.setProperty('--rot', `${(Math.random() * 6 - 3).toFixed(1)}deg`);

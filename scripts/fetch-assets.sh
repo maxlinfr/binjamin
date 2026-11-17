@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Optional: download the models + libraries into the repo so Binjamin never
 # needs a CDN (the app automatically prefers these local copies if they exist).
-# ~25 MB total. Run from the repo root:  bash scripts/fetch-assets.sh
+# ~29 MB total. Run from the repo root:  bash scripts/fetch-assets.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -15,6 +15,7 @@ for f in vision_wasm_internal.js vision_wasm_internal.wasm vision_wasm_nosimd_in
   get "$MP/wasm/$f" "vendor/mediapipe/wasm/$f"
 done
 get https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js vendor/opencv/opencv.js
+get https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task models/face_landmarker.task
 get https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task models/hand_landmarker.task
 get https://storage.googleapis.com/mediapipe-models/image_classifier/efficientnet_lite0/int8/1/efficientnet_lite0.tflite models/efficientnet_lite0.tflite
 

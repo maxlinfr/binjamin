@@ -79,12 +79,18 @@ function loop(now) {
   if (h?.present) lastRawHand = h;
   const hand = h?.present ? { present: true, x: toUserX(h.cx), y: h.cy, raw: h } : { present: false };
 
+  // face/stare: ~10x a second, skipped while examining so the classifier gets the CPU/GPU
+  let face = null;
+  if (visionReady && mode === 'run' && brain.state !== 'examining' && frameN % CONFIG.face.every === 0) {
+    try { face = V.detectFace(video, now); } catch (e) { console.warn(e); }
+  }
+
   let m = null;
   if (motion && frameN % CONFIG.motion.every === 0) {
     try { m = motion.update(video); } catch (e) { console.warn('[motion] disabled', e); motion = null; motionError = e; }
   }
 
-  const p = { hand, motion: m };
+  const p = { hand, motion: m, face };
   if (mode === 'setup') setup.onFrame(now, p);
   else if (mode === 'run') brain.tick(now, p);
   debug.draw(now, p, { motionReady: !!motion, motionError });
@@ -156,6 +162,8 @@ async function boot() {
   }
 
   await visionP;
+  // no face model? fall back to waking up on motion
+  if (CONFIG.face.enabled && V.status.face !== true) CONFIG.motion.noticeByMotion = true;
   if (mode === 'run' && brain.state === 'loading') brain.go('idle');
 }
 

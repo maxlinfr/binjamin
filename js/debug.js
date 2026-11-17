@@ -2,11 +2,26 @@
 // plus tap buttons to force any state (the week-1 "step through by hand" panel).
 // Toggle: press D, or triple-tap the top-left corner.
 
-import { settings, saveSettings, toUserX } from './config.js';
+import { CONFIG, settings, saveSettings, toUserX } from './config.js';
 import { STATES } from './brain.js';
 import { lastCrop, status } from './vision.js';
 
 const $ = (id) => document.getElementById(id);
+
+// "face: STARING 1.2s  size .21  yaw .05  eyes side .12 up .03 down .40  blink .02"
+// Each number is checked against CONFIG.face limits; '!' marks the one breaking the stare.
+function faceLine(brain) {
+  const f = brain.face;
+  if (!f?.present) return `face: -${brain.faceNeedsReset ? '  (needs look-away)' : ''}`;
+  const F = CONFIG.face;
+  const chk = (v, ok) => `${v.toFixed(2)}${ok ? '' : '!'}`;
+  const s = brain.staring(performance.now());
+  return `face: ${f.staring ? `STARING ${(s.ms / 1000).toFixed(1)}s` : 'looking away'}`
+    + `  size ${chk(f.size, f.size >= F.minSize)} yaw ${chk(f.yaw, f.yaw <= F.maxYaw)}`
+    + `\n      eyes side ${chk(f.gazeSide, f.gazeSide <= F.maxGazeSide)} up ${chk(f.gazeUp, f.gazeUp <= F.maxGazeUp)}`
+    + ` down ${chk(f.gazeDown, f.gazeDown <= F.maxGazeDown)} blink ${chk(f.blink, f.blink <= F.maxBlink)}`
+    + `${brain.faceNeedsReset ? '  (needs look-away)' : ''}`;
+}
 
 export class Debug {
   constructor({ video, brain, onCommand }) {
@@ -68,6 +83,14 @@ export class Debug {
       ctx.strokeStyle = '#ff5c8a'; ctx.lineWidth = 3;
       ctx.strokeRect(Math.min(xa, xb) * w, raw.box.y0 * h, Math.abs(xb - xa) * w, (raw.box.y1 - raw.box.y0) * h);
     }
+    // face box: cyan = staring, grey = face but not staring
+    const f = brain.face;
+    if (f?.present && f.box) {
+      const xa = toUserX(f.box.x0), xb = toUserX(f.box.x1);
+      ctx.strokeStyle = f.staring ? '#39e6ff' : '#999'; ctx.lineWidth = f.staring ? 4 : 2;
+      ctx.strokeRect(Math.min(xa, xb) * w, f.box.y0 * h, Math.abs(xb - xa) * w, (f.box.y1 - f.box.y0) * h);
+      if (f.staring) { ctx.fillStyle = '#39e6ff'; ctx.font = 'bold 13px monospace'; ctx.fillText('STARING', Math.min(xa, xb) * w + 4, f.box.y0 * h - 4); }
+    }
     // hand trail
     ctx.fillStyle = '#ff5c8a';
     for (const t of brain.handTrack) ctx.fillRect(t.x * w - 2, t.y * h - 2, 4, 4);
@@ -91,7 +114,8 @@ export class Debug {
     const top = brain.ballot.topRaw(4).map(([k, v]) => `  ${k} ${v.toFixed(2)}`).join('\n');
     this.text.textContent = [
       `state: ${brain.state}  ${brain.auto ? 'AUTO' : 'MANUAL (press A)'}`,
-      `fps: ${this.fps}  hands: ${status.hands ? status.delegate : '…'}  clf: ${status.classifier ? 'ok' : '…'}  opencv: ${extra.motionReady ? 'ok' : extra.motionError ? 'failed' : '…'}`,
+      `fps: ${this.fps}  hands: ${status.hands ? status.delegate : '…'}  face: ${status.face === true ? 'ok' : status.face || '…'}  clf: ${status.classifier ? 'ok' : '…'}  opencv: ${extra.motionReady ? 'ok' : extra.motionError ? 'failed' : '…'}`,
+      faceLine(brain),
       `recycle: ${settings.recycleSide}  midline: ${settings.midline.toFixed(2)}`,
       `hand: ${p?.hand?.present ? `x=${p.hand.x.toFixed(2)}` : '-'}  motion: ${p?.motion ? p.motion.total.toFixed(3) : '-'}${brain.needClear ? '  (waiting for clear)' : ''}`,
       d ? `last: ${d.bin}${d.item ? ` (${d.item})` : ''} ev=${d.evidence.toFixed(2)} share=${d.share.toFixed(2)} n=${d.frames}` : 'last: -',
