@@ -7,6 +7,7 @@ import { Brain, STATES } from './brain.js';
 import { Setup } from './setup.js';
 import { Debug } from './debug.js';
 import { preloadArt } from './art.js';
+import { initClip, classifyClip } from './clip.js';
 
 const video = document.getElementById('cam');
 const ui = new UI();
@@ -18,9 +19,18 @@ let lastRawHand = null;
 let lastVideoTime = -1;
 let frameN = 0;
 
+let clipReady = false;
+const useClip = CONFIG.classifier !== 'imagenet';
+
+// One examining sample: crop around the hand, ask the general model (fast, sync),
+// then MobileCLIP on the same crop (slower, async) if it's loaded.
 const brain = new Brain(ui, (n) => {
   const scales = CONFIG.classify.cropScales;
-  return V.classifyAround(video, lastRawHand?.box, scales[n % scales.length]);
+  const imagenet = V.classifyAround(video, lastRawHand?.box, scales[n % scales.length]);
+  if (!useClip || !clipReady) return imagenet ? { imagenet } : null;
+  return classifyClip(V.lastCrop)
+    .then((clip) => ({ imagenet, clip }))
+    .catch((e) => { console.warn('[clip]', e); return imagenet ? { imagenet } : null; });
 });
 
 const startCamera = async () => {
@@ -77,7 +87,9 @@ function loop(now) {
   let h = null;
   try { h = visionReady ? V.detectHands(video, now) : null; } catch (e) { console.warn(e); }
   if (h?.present) lastRawHand = h;
-  const hand = h?.present ? { present: true, x: toUserX(h.cx), y: h.cy, raw: h } : { present: false };
+  const hand = h?.present
+    ? { present: true, x: toUserX(h.cx), y: h.cy, size: Math.max(h.box.x1 - h.box.x0, h.box.y1 - h.box.y0), raw: h }
+    : { present: false };
 
   // face/stare: ~10x a second, skipped while examining so the classifier gets the CPU/GPU
   let face = null;
@@ -162,6 +174,12 @@ async function boot() {
   }
 
   await visionP;
+  // MobileCLIP loads in the background; until it's ready, the general model handles everything
+  if (useClip && !params.has('novision')) {
+    initClip()
+      .then(() => { clipReady = true; console.log('[clip] ready'); })
+      .catch((e) => { console.warn('[clip] unavailable, using the general model only', e); toast('trash model failed to load, using the general one'); });
+  }
   // no face model? fall back to waking up on motion
   if (CONFIG.face.enabled && V.status.face !== true) CONFIG.motion.noticeByMotion = true;
   if (mode === 'run' && brain.state === 'loading') brain.go('idle');

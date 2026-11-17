@@ -33,6 +33,10 @@ export class Brain {
     this.faceNeedsReset = false; // after a reaction, the person must look away before a stare re-wakes him
     this.notStareSince = 0;
     this.nudged = false;
+    this.presentedSince = 0;
+    this.lastPresented = -1e9;
+    this.heldMs = 0;
+    this.handQ = { ok: false };
     this.ballot = new Ballot();
     this.lastDecision = null;
     this.lastExit = null;
@@ -117,8 +121,20 @@ export class Brain {
       }
     }
 
+    // Is a hand being *presented* (close, still, in the middle), not just passing by?
+    const H = CONFIG.hand;
+    const q = this.handQuality(now);
+    this.handQ = q;
+    if (q.ok) {
+      if (now - this.lastPresented > H.graceMs) this.presentedSince = now; // a new hold begins
+      this.lastPresented = now;
+    }
+    const presented = now - this.lastPresented <= H.graceMs;
+    this.heldMs = presented ? now - this.presentedSince : 0;
+
     if (!this.auto || !this.state) return;
-    const held = hand.present ? now - this.handSince : 0;
+    const held = this.heldMs;
+    const holdMs = H.holdMs * (q.relax ? 0.6 : 1);
     const age = now - this.enteredAt;
 
     switch (this.state) {
@@ -128,7 +144,7 @@ export class Brain {
       case 'idle': {
         if (this.needClear) break;
         const busy = p?.motion && !p.motion.lightingJump && p.motion.total > CONFIG.motion.presence;
-        if (held > T.noticeMs) this.go('noticed', {}, now);
+        if (held > H.noticeMs) this.go('noticed', {}, now);
         else if (F.enabled && !this.faceNeedsReset && stare.ms > F.stareMs) this.go('noticed', { line: 'stared', byFace: true }, now);
         else if (CONFIG.motion.noticeByMotion && busy && age > 1500) this.go('noticed', { byMotion: true }, now);
         else if (age > T.idleLineMs) this.go('idle', {}, now); // fidget: new line + drawing
@@ -136,7 +152,7 @@ export class Brain {
       }
 
       case 'noticed': {
-        if (held > T.settleMs) { this.startExam(now); break; }
+        if (held > holdMs) { this.startExam(now); break; }
         // still being looked at? then keep waiting for the trash
         const watching = stare.on || now - this.lastStare < F.lookAwayMs;
         if (watching && !hand.present && !this.nudged && age > 3500) {
@@ -154,10 +170,20 @@ export class Brain {
           this.go('idle', { line: 'lost' }, now);
           break;
         }
-        if (hand.present && p && now - this.lastSample >= T.examineIntervalMs) {
+        // only still frames vote: no motion blur, and a passing hand can't sneak in
+        if (!this.sampling && hand.present && q.still && p && now - this.lastSample >= T.examineIntervalMs) {
           this.lastSample = now;
-          const cats = this.classify(this.sampleN++);
-          if (cats) this.ballot.add(cats);
+          const res = this.classify(this.sampleN++);
+          if (res && typeof res.then === 'function') {
+            // async (MobileCLIP): one sample in flight at a time; drop results from an older exam
+            const exam = this.examId;
+            this.sampling = true;
+            res.then((r) => { if (r && exam === this.examId) this.ballot.add(r); })
+              .catch((e) => console.warn('[classify]', e))
+              .finally(() => { if (exam === this.examId) this.sampling = false; });
+          } else if (res) {
+            this.ballot.add(res);
+          }
         }
         const enough = this.ballot.frames >= CONFIG.classify.minFrames;
         if ((age >= T.examineMs && enough) || age >= T.examineMs * 3) this.decide(now);
@@ -197,7 +223,29 @@ export class Brain {
     }
   }
 
+  // Close enough + still enough + not at the edges = someone is showing me something.
+  handQuality(now) {
+    const H = CONFIG.hand, h = this.hand;
+    if (!h.present) return { ok: false };
+    const relax = H.stareRelax && CONFIG.face.enabled && this.staring(now).on;
+    const minSize = H.minSize * (relax ? 0.7 : 1);
+    let x0 = 1, x1 = 0, y0 = 1, y1 = 0;
+    for (const t of this.handTrack) {
+      if (now - t.t > H.stillWindowMs) continue;
+      x0 = Math.min(x0, t.x); x1 = Math.max(x1, t.x); y0 = Math.min(y0, t.y); y1 = Math.max(y1, t.y);
+    }
+    const range = x1 >= x0 ? Math.max(x1 - x0, y1 - y0) : 0;
+    const size = h.size || 0;
+    const big = size >= minSize;
+    const still = range <= H.stillRange;
+    const inZone = h.x >= H.edgeMargin && h.x <= 1 - H.edgeMargin && h.y <= H.maxY;
+    return { ok: big && still && inZone, size, minSize, range, big, still, inZone, relax };
+  }
+
   startExam(now) {
+    this.examId = (this.examId || 0) + 1;
+    this.sampling = false;
+    this.examStartedAt = now;
     this.ballot = new Ballot();
     this.lastSample = 0;
     this.sampleN = 0;
@@ -205,7 +253,7 @@ export class Brain {
   }
 
   decide(now) {
-    const d = this.ballot.decide(CONFIG.classify);
+    const d = this.ballot.decide(CONFIG);
     this.lastDecision = d;
     if (d.bin === 'nottrash') { this.go('nottrash', d, now); return; }
     const state = d.bin === 'confused' ? 'confused' : d.bin;

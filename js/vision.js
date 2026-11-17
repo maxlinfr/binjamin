@@ -27,18 +27,19 @@ async function create(Task, fileset, options, preferGPU) {
   throw err;
 }
 
-export async function initVision(progress = () => {}) {
+export async function initVision(progress = () => {}, { classifierOnly = false } = {}) {
   progress('loading eyeballs...');
   const tv = await import(await firstAvailable(URLS.tasksVision));
   const fileset = await tv.FilesetResolver.forVisionTasks(await firstAvailable(URLS.wasmBase));
+  if (classifierOnly) { await initClassifier(tv, fileset, progress); return; }
 
   progress('learning what hands look like...');
   const h = await create(tv.HandLandmarker, fileset, {
     baseOptions: { modelAssetPath: await firstAvailable(URLS.handModel) },
     runningMode: 'VIDEO',
     numHands: 1,
-    minHandDetectionConfidence: 0.5,
-    minHandPresenceConfidence: 0.5,
+    minHandDetectionConfidence: CONFIG.hand.minConfidence,
+    minHandPresenceConfidence: Math.max(0.5, CONFIG.hand.minConfidence - 0.1),
     minTrackingConfidence: 0.5,
   }, true);
   hands = h.task; status.hands = true; status.delegate = h.delegate;
@@ -62,6 +63,10 @@ export async function initVision(progress = () => {}) {
     }
   }
 
+  await initClassifier(tv, fileset, progress);
+}
+
+async function initClassifier(tv, fileset, progress) {
   progress('learning what trash looks like...');
   const c = await create(tv.ImageClassifier, fileset, {
     baseOptions: { modelAssetPath: await firstAvailable(URLS.classifierModel) },
@@ -103,6 +108,12 @@ export function detectHands(video, now) {
     x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
   }
   return { present: true, box: { x0, y0, x1, y1 }, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, landmarks: lm };
+}
+
+// General-model classification of any canvas/image (used by the bench page).
+export function classifyCanvas(canvas) {
+  if (!classifier) return null;
+  return classifier.classify(canvas).classifications?.[0]?.categories ?? [];
 }
 
 // Is someone staring at Binjamin? Face detection + head turn + eye direction.

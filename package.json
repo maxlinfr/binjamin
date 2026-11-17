@@ -1,0 +1,13 @@
+{
+  "name": "binjamin",
+  "private": true,
+  "type": "module",
+  "description": "Recycling buddy hamster. The app itself needs no build step; this is only for dev scripts.",
+  "scripts": {
+    "labels": "node scripts/build-trash-labels.mjs",
+    "serve": "python -m http.server 8000"
+  },
+  "devDependencies": {
+    "@huggingface/transformers": "4.3.2"
+  }
+}

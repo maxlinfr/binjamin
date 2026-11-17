@@ -5,8 +5,20 @@
 import { CONFIG, settings, saveSettings, toUserX } from './config.js';
 import { STATES } from './brain.js';
 import { lastCrop, status } from './vision.js';
+import { clipStatus } from './clip.js';
 
 const $ = (id) => document.getElementById(id);
+
+// "hand: HELD 0.8s  size .21 still .02 zone ok"  ('!' marks the check that's failing)
+function handLine(brain) {
+  const q = brain.handQ;
+  if (!q || q.size === undefined) return 'hand: -';
+  const H = CONFIG.hand;
+  return `hand: ${q.ok ? `HELD ${(brain.heldMs / 1000).toFixed(1)}s` : 'ignored'}`
+    + `  size ${q.size.toFixed(2)}${q.big ? '' : `! (<${q.minSize.toFixed(2)})`}`
+    + `  moved ${q.range.toFixed(2)}${q.still ? '' : `! (>${H.stillRange})`}`
+    + `  zone ${q.inZone ? 'ok' : 'edge!'}${q.relax ? '  (stare bonus)' : ''}`;
+}
 
 // "face: STARING 1.2s  size .21  yaw .05  eyes side .12 up .03 down .40  blink .02"
 // Each number is checked against CONFIG.face limits; '!' marks the one breaking the stare.
@@ -80,7 +92,8 @@ export class Debug {
     const raw = p?.hand?.raw;
     if (raw?.box) {
       const xa = toUserX(raw.box.x0), xb = toUserX(raw.box.x1);
-      ctx.strokeStyle = '#ff5c8a'; ctx.lineWidth = 3;
+      // green = counts as "showing me something", pink = ignored (passerby / moving / too far)
+      ctx.strokeStyle = brain.handQ?.ok ? '#3cff8f' : '#ff5c8a'; ctx.lineWidth = 3;
       ctx.strokeRect(Math.min(xa, xb) * w, raw.box.y0 * h, Math.abs(xb - xa) * w, (raw.box.y1 - raw.box.y0) * h);
     }
     // face box: cyan = staring, grey = face but not staring
@@ -117,11 +130,14 @@ export class Debug {
       `fps: ${this.fps}  hands: ${status.hands ? status.delegate : '…'}  face: ${status.face === true ? 'ok' : status.face || '…'}  clf: ${status.classifier ? 'ok' : '…'}  opencv: ${extra.motionReady ? 'ok' : extra.motionError ? 'failed' : '…'}`,
       faceLine(brain),
       `recycle: ${settings.recycleSide}  midline: ${settings.midline.toFixed(2)}`,
-      `hand: ${p?.hand?.present ? `x=${p.hand.x.toFixed(2)}` : '-'}  motion: ${p?.motion ? p.motion.total.toFixed(3) : '-'}${brain.needClear ? '  (waiting for clear)' : ''}`,
-      d ? `last: ${d.bin}${d.item ? ` (${d.item})` : ''} ev=${d.evidence.toFixed(2)} share=${d.share.toFixed(2)} n=${d.frames}` : 'last: -',
-      `votes: R ${brain.ballot.votes.recycle.toFixed(2)}  L ${brain.ballot.votes.landfill.toFixed(2)}  N ${brain.ballot.votes.nottrash.toFixed(2)}`,
+      handLine(brain),
+      `motion: ${p?.motion ? p.motion.total.toFixed(3) : '-'}${brain.needClear ? '  (waiting for hand to leave)' : ''}`,
+      `trash model: ${clipStatus.ready ? `ok (${clipStatus.device}, ${clipStatus.ms.toFixed(0)}ms/frame)` : clipStatus.error ? 'failed' : CONFIG.classifier === 'imagenet' ? 'off' : 'loading…'}`,
+      d ? `last: ${d.bin}${d.item ? ` (${d.item})` : ''} via ${d.source || '-'}  conf ${d.evidence.toFixed(2)}  frames ${d.frames}` : 'last: -',
+      `trash model saw: ${brain.ballot.clipTop(3).map((c) => `${c.item} ${c.p.toFixed(2)}`).join(' | ') || '-'}`,
+      `general votes: R ${brain.ballot.votes.recycle.toFixed(2)}  L ${brain.ballot.votes.landfill.toFixed(2)}  N ${brain.ballot.votes.nottrash.toFixed(2)}`,
       brain.lastExit ? `exit: ${brain.lastExit.side} x=${brain.lastExit.x.toFixed(2)} via ${brain.lastExit.source}` : 'exit: -',
-      'labels seen:', top || '  -',
+      'general model saw:', top || '  -',
     ].join('\n');
   }
 }

@@ -5,8 +5,6 @@ export const CONFIG = {
   camera: { width: 640, height: 480 },
 
   timing: {
-    noticeMs: 250,          // hand in frame this long -> "noticed you"
-    settleMs: 650,          // hand held up this long (while noticed) -> "examining"
     examineMs: 1300,        // length of the "hmmmm" beat (also the voting window)
     examineIntervalMs: 140, // how often to classify a frame while examining
     lostHandMs: 1400,       // hand gone this long during exam -> give up
@@ -19,8 +17,38 @@ export const CONFIG = {
     clearMs: 600,           // after a reaction, hand must be gone this long before re-noticing
   },
 
+  // Which hands count as "someone showing me trash" (vs. a passerby's swinging hand).
+  // A hand must pass ALL checks to count. Tune with the debug panel's "hand:" line.
+  hand: {
+    minConfidence: 0.7,     // MediaPipe detection confidence (default 0.5; higher = fewer junk hands)
+    minSize: 0.14,          // hand size as fraction of frame. Bigger = must be closer. Passersby are tiny.
+    stillRange: 0.06,       // max distance the hand may wander (fraction of frame)...
+    stillWindowMs: 500,     // ...over this much time. A walking hand moves ~0.3 in 0.5s.
+    edgeMargin: 0.1,        // ignore hands whose center is this close to the left/right edge
+    maxY: 0.9,              // ignore hands near the very bottom (swinging at hip level)
+    graceMs: 200,           // a flicker shorter than this doesn't reset the hold timer
+    noticeMs: 400,          // held up + still this long -> "noticed you"
+    holdMs: 1200,           // held up + still this long -> "examining"
+    stareRelax: true,       // someone staring at him too? size limit x0.7 and hold time x0.6
+  },
+
+  // Which classifier(s) to use:
+  //   'clip+imagenet' = MobileCLIP trash list first, general ImageNet model as fallback + troll check (recommended)
+  //   'imagenet'      = only the general ImageNet model + js/bins.js lookup (the original v0)
+  classifier: 'clip+imagenet',
+
+  clip: {
+    model: 'Xenova/mobileclip_s0',
+    dtype: 'fp16',          // fp16 = 23 MB download, same accuracy as fp32 (45 MB).
+                            // DON'T use 'q8': it breaks this model (10% accuracy vs 76% in tests).
+    device: 'wasm',         // 'wasm' works everywhere. Try 'webgpu' on newer iPads (falls back to wasm).
+    minConfidence: 0.6,     // CLIP must be this sure of a bin (averaged over frames), else ask the general model
+    nottrashVeto: 0.25,     // general model sees a phone/wallet/etc. at this avg score -> "not trash", always
+    logitScale: 100,        // CLIP's standard temperature. Lower = less confident, more spread out.
+  },
+
   classify: {
-    minFrames: 4,           // need at least this many votes before deciding
+    minFrames: 3,           // need at least this many votes before deciding (trash model: ~250ms each)
     minEvidence: 0.12,      // avg matched-label score per frame; below = confused
     minShare: 0.6,          // winning bin's share of votes; below = confused
     cropScales: [2.4, 3.4], // crop size around the hand (x hand size), alternated per frame
@@ -72,6 +100,9 @@ export const URLS = {
     'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'],
   classifierModel: ['models/efficientnet_lite0.tflite',
     'https://storage.googleapis.com/mediapipe-models/image_classifier/efficientnet_lite0/int8/1/efficientnet_lite0.tflite'],
+  transformers: ['vendor/transformers/transformers.min.js',
+    'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2/dist/transformers.min.js'],
+  trashEmbeddings: 'models/trash-text-embeddings.json', // built by `npm run labels`
   opencv: ['vendor/opencv/opencv.js',
     'https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js'],
 };

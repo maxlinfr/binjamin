@@ -8,8 +8,9 @@ Everything runs in Safari on the iPad: no app, no server, no cloud.
 |---|---|
 | MediaPipe Face Landmarker | wakes him up when someone **stares** at him (head facing + eyes on him). Detection only, no identity, nothing stored |
 | MediaPipe Hand Landmarker | finds the hand holding the item |
-| MediaPipe Image Classifier (EfficientNet-Lite0, ImageNet) | classifies a crop around the hand, voted over ~1.3s |
-| [js/bins.js](js/bins.js) | ImageNet label → recycle / landfill / "that's your phone bro" |
+| MobileCLIP-S0 (Transformers.js) | **trash model**: picks only from the cafeteria-trash list in [js/trash-labels.js](js/trash-labels.js), voted over ~1.3s |
+| MediaPipe Image Classifier (EfficientNet-Lite0, ImageNet) | **general model**: fallback when the trash model isn't sure, and the "that's your phone" troll check |
+| [js/bins.js](js/bins.js) | general model's label → bin lookup, and the decision order between the two models |
 | OpenCV.js | frame-diff motion: setup wave test, tracks which side the item went (and wakes him up if the face model fails) |
 | [js/brain.js](js/brain.js) | hand-written state machine (idle → noticed → examining → verdict → happy/sad) |
 
@@ -52,6 +53,26 @@ URL switches for troubleshooting: `?nocv` (skip OpenCV), `?novision` (skip Media
 ## Drawing Binjamin
 
 Placeholder hamsters are drawn in code. Replace them by dropping PNGs into `art/` and listing them in [art/manifest.js](art/manifest.js): per state, 2–3 variants × 1–3 wobble frames. The title, instructions, arrow and RECYCLE/LANDFILL labels have slots there too. Anything missing falls back to the placeholder, so you can fill them in one at a time. Draw the pointing poses pointing **left**; he's mirrored automatically.
+
+## The classifier
+
+Two models vote on every "examining" frame (a crop around the hand). The final call goes:
+1. the general model clearly sees a phone/wallet/etc. → **not trash** (troll check always wins)
+2. the trash model is ≥ 60% sure of a bin → use it
+3. otherwise → the general model + lookup table
+4. nobody sure → confused → landfill
+
+On 49 TrashNet photos: general model alone **33%**, trash model + fallback **71%**.
+
+**Editing the trash list:** edit [js/trash-labels.js](js/trash-labels.js) (plain English descriptions), then rebuild:
+```bash
+npm install        # once (~200 MB of dev tools; keep node_modules out of OneDrive sync if you can)
+npm run labels     # rewrites models/trash-text-embeddings.json; commit that file
+```
+
+**Testing it:** open `/bench.html`, drop in photos of real trash, and see what each model said and who decided. Name files `recycle_…`, `landfill_…`, `nottrash_…` to get an accuracy score. Add `?model=imagenet` to compare against the general model alone.
+
+Switch back to the old setup with `classifier: 'imagenet'` in [js/config.js](js/config.js). Don't set the trash model's `dtype` to `'q8'`: that quantized version is broken for this model (10% accuracy in tests).
 
 ## Tuning
 
