@@ -2,7 +2,7 @@
 
 import { CONFIG, settings, sideOfBin, arrowFor } from './config.js';
 import { LINES, INSTRUCTIONS, BIN_NAMES } from './copy.js';
-import { pickArt, arrowSVG, userArt } from './art.js';
+import { pickArt, arrowSVG, userArt, pageBackground, whiteCurve } from './art.js';
 
 const $ = (id) => document.getElementById(id);
 const lastLine = {};
@@ -17,6 +17,7 @@ function pickLine(key) {
 
 export class UI {
   init() {
+    document.body.dataset.bg = pageBackground; // 'white' | 'notebook' (set in art/manifest.js)
     this.stage = $('stage');
     this.hamster = $('hamster');
     this.speech = $('speech');
@@ -34,10 +35,17 @@ export class UI {
       el.innerHTML = userArt.arrow ? `<img src="${userArt.arrow}" alt="">` : arrowSVG(side === 'left' ? 7 : 11);
     }
 
-    // "line boil": re-roll the wobble filter a few times a second so text looks hand-animated
-    const noise = $('boil-noise');
+    // "clean whites" curve from art/manifest.js
+    const curve = whiteCurve();
+    if (curve) document.querySelectorAll('.white-fn').forEach((fn) => fn.setAttribute('tableValues', curve));
+
+    // "line boil": re-roll the wobble filters a few times a second so things look hand-animated
+    const noises = document.querySelectorAll('.boil-noise');
     let seed = 0;
-    setInterval(() => { seed = (seed + 1) % 3; noise?.setAttribute('seed', String(seed + 1)); }, 160);
+    setInterval(() => {
+      seed = (seed + 1) % 3;
+      noises.forEach((n) => n.setAttribute('seed', String(seed + 1)));
+    }, 160);
   }
 
   show(state, info = {}) {
@@ -48,6 +56,21 @@ export class UI {
     const art = pickArt(state, dir);
     this.playFrames(art.frames);
     this.hamster.classList.toggle('flip', art.flip);
+    this.hamster.classList.toggle('blend', !!art.blend);
+    // single still image? wobble it with the line-boil filter so it still feels hand-animated
+    this.hamster.classList.toggle('boil', !!art.user && art.frames.length === 1);
+    this.hamster.classList.toggle('clean', !!art.clean);
+
+    // looking around: flip back and forth at random, human-ish intervals
+    clearTimeout(this.lookTimer);
+    this.hamster.classList.remove('look');
+    if (art.lookAround) {
+      const glance = () => {
+        this.hamster.classList.toggle('look');
+        this.lookTimer = setTimeout(glance, 1200 + Math.random() * 2000);
+      };
+      this.lookTimer = setTimeout(glance, 800 + Math.random() * 1200);
+    }
     this.hamster.classList.remove('boing');
     void this.hamster.offsetWidth; // restart the squash-and-stretch animation
     this.hamster.classList.add('boing');

@@ -8,6 +8,7 @@ const POINTING = new Set(['recycle', 'landfill', 'confused']);
 const FALLBACK = { nottrash: 'confused' };
 const PLACEHOLDER_VARIANTS = { idle: 2, sad: 2, happy: 2 };
 
+export const pageBackground = manifest.background === 'white' ? 'white' : 'notebook';
 const user = {};         // state -> [[frame urls]]
 export const userArt = { title: null, instructions: null, arrow: null, labels: {} };
 const cache = new Map(); // placeholder data URLs
@@ -48,22 +49,44 @@ function pickIndex(n, key) {
   return i;
 }
 
-// -> { frames: [url, ...], flip: bool }
+// -> { frames: [url, ...], flip: bool, user: bool, blend: bool }
 export function pickArt(state, dir = 'left') {
   let key = state;
   if (!user[key] && FALLBACK[key] && user[FALLBACK[key]]) key = FALLBACK[key];
   if (user[key]) {
     const variants = user[key];
     const frames = variants[pickIndex(variants.length, `u:${key}`)];
-    const flip = POINTING.has(state) && dir !== (manifest.pointingDrawnFacing || 'left');
-    return { frames, flip };
+    const flip = manifest.mirrorPointing !== false && POINTING.has(state)
+      && dir !== (manifest.pointingDrawnFacing || 'left');
+    return {
+      frames, flip, user: true,
+      blend: pageBackground === 'notebook' && manifest.fadeEdges !== false,
+      clean: !!manifest.cleanWhites,
+      lookAround: (manifest.lookAround || []).includes(state),
+    };
   }
   const v = pickIndex(PLACEHOLDER_VARIANTS[state] || 1, `p:${state}`);
   const ck = `${state}|${v}|${dir}`;
   if (!cache.has(ck)) {
     cache.set(ck, [0, 1].map((frame) => svgUrl(hamsterSVG(state, { frame, variant: v, dir }))));
   }
-  return { frames: cache.get(ck), flip: false };
+  return { frames: cache.get(ck), flip: false, lookAround: (manifest.lookAround || []).includes(state) };
+}
+
+// Transfer curve for the "clean whites" filter: identity below the threshold,
+// ramps up to pure white at it. -> "0 0.025 0.05 ... 1 1"
+export function whiteCurve() {
+  const t = Number(manifest.cleanWhites);
+  if (!t) return null;
+  const n = 80, ramp = 0.05;
+  const vals = [];
+  for (let i = 0; i <= n; i++) {
+    const x = i / n;
+    if (x >= t) vals.push(1);
+    else if (x > t - ramp) vals.push(x + (1 - x) * ((x - (t - ramp)) / ramp));
+    else vals.push(x);
+  }
+  return vals.map((v) => v.toFixed(4)).join(' ');
 }
 
 export const svgUrl = (svg) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;

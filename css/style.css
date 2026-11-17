@@ -31,6 +31,10 @@ body {
     repeating-linear-gradient(transparent 0 46px, rgba(70, 120, 210, .13) 46px 48px);
 }
 
+/* plain white page (art/manifest.js -> background: 'white') */
+body[data-bg="white"] { --paper: #fff; background-image: none; }
+body[data-bg="white"] #setup { background-image: none; }
+
 .boil { filter: url(#boil); }
 
 /* ---------------- stage layout ---------------- */
@@ -73,10 +77,16 @@ body {
 #speech-text { display: inline-block; animation: jitter .5s steps(2) infinite; }
 #speech.pop { animation: pop .35s cubic-bezier(.3, 1.6, .5, 1); }
 
+/* text always draws ON TOP of the hamster, so his (white) image can never cover it */
+#title, #speech, #subline, #instructions, .verdict-arrow { position: relative; z-index: 2; }
+
 #hamster-wrap {
+  position: relative;
+  z-index: 1;
   flex: 0 1 auto;
   height: 64vmin;
   min-height: 0;
+  margin-top: 2vmin; /* breathing room under the speech line */
   width: 100%;
   display: flex;
   align-items: center;
@@ -85,12 +95,29 @@ body {
   transform-origin: 50% 100%;
 }
 #hamster {
-  height: 100%;
+  height: 88%; /* headroom: bounces/squash can grow ~12% without leaving his box */
+  margin-top: auto; /* sit at the bottom of the box so growth goes into the headroom */
   max-width: 100%;
   object-fit: contain;
   transform-origin: 50% 90%;
 }
 #hamster.flip { transform: scaleX(-1); }
+
+/* clean whites (art/manifest.js -> cleanWhites) */
+#hamster.clean, #setup-hamster.clean { filter: url(#clean); }
+#hamster.clean.boil { filter: url(#boil-clean); }
+
+/* looking around (art/manifest.js -> lookAround). Uses the separate `scale` property so it
+   doesn't fight the squash/stretch transform; passing through 0 width reads as a head turn. */
+#hamster { transition: scale .2s ease-in-out; }
+#hamster.look { scale: -1 1; }
+
+/* white-background art (JPG memes): feather the edges with a soft oval so the white
+   box and hard crop edges fade into the notebook paper, like the lines were erased around him */
+.blend {
+  -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 72%, transparent 100%);
+  mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 72%, transparent 100%);
+}
 #hamster.boing { animation: boing .5s cubic-bezier(.25, 1.5, .5, 1); }
 #hamster.flip.boing { animation-name: boing-flip; }
 
@@ -157,24 +184,25 @@ body {
 /* ---------------- animations (squash/stretch, ease in/out) ---------------- */
 @keyframes boing {
   0% { transform: scale(1, 1); }
-  25% { transform: scale(1.16, .84); }
-  55% { transform: scale(.93, 1.08); }
-  80% { transform: scale(1.03, .97); }
+  25% { transform: scale(1.12, .88); }
+  55% { transform: scale(.95, 1.06); }
+  80% { transform: scale(1.02, .98); }
   100% { transform: scale(1, 1); }
 }
 @keyframes boing-flip {
   0% { transform: scale(-1, 1); }
-  25% { transform: scale(-1.16, .84); }
-  55% { transform: scale(-.93, 1.08); }
-  80% { transform: scale(-1.03, .97); }
+  25% { transform: scale(-1.12, .88); }
+  55% { transform: scale(-.95, 1.06); }
+  80% { transform: scale(-1.02, .98); }
   100% { transform: scale(-1, 1); }
 }
-@keyframes breathe { 0%, 100% { transform: translateY(0) scale(1, 1); } 50% { transform: translateY(-1vmin) scale(1.012, .99); } }
-@keyframes lean { 0%, 100% { transform: scale(1.06) translateY(1vmin); } 50% { transform: scale(1.1) translateY(0); } }
-@keyframes hop { 0%, 100% { transform: translateY(0) scale(1.04, .96); } 50% { transform: translateY(-3vmin) scale(.97, 1.04); } }
-@keyframes slump { 0%, 100% { transform: translateY(1.5vmin) scale(1.02, .97); } 50% { transform: translateY(2vmin) scale(1.03, .96); } }
-@keyframes wobble { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
-@keyframes perk { 0%, 100% { transform: translateY(-1vmin) scale(1.04); } 50% { transform: translateY(-2vmin) scale(1.06); } }
+/* body language: all growth/upward moves stay inside the 12% headroom above him */
+@keyframes breathe { 0%, 100% { transform: translateY(0) scale(1, 1); } 50% { transform: translateY(-.6vmin) scale(1.01, .99); } }
+@keyframes lean { 0%, 100% { transform: scale(1.03); } 50% { transform: scale(1.06); } }
+@keyframes hop { 0%, 100% { transform: translateY(0) scale(1.03, .97); } 50% { transform: translateY(-2vmin) scale(.98, 1.03); } }
+@keyframes slump { 0%, 100% { transform: translateY(1vmin) scale(1.02, .97); } 50% { transform: translateY(1.5vmin) scale(1.03, .96); } }
+@keyframes wobble { 0%, 100% { transform: rotate(-2.5deg); } 50% { transform: rotate(2.5deg); } }
+@keyframes perk { 0%, 100% { transform: translateY(-.5vmin) scale(1.02); } 50% { transform: translateY(-1.2vmin) scale(1.04); } }
 @keyframes jitter {
   0% { transform: translate(0, 0) rotate(0deg); }
   50% { transform: translate(1px, -1px) rotate(-.6deg); }

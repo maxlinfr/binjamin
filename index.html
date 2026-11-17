@@ -19,8 +19,22 @@
   <!-- "line boil" filter: makes lettering wobble like hand-drawn animation -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <filter id="boil" x="-5%" y="-5%" width="110%" height="110%">
-      <feTurbulence id="boil-noise" type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="1" result="noise"/>
+      <feTurbulence class="boil-noise" type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="1" result="noise"/>
       <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.5" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <!-- "clean whites": snaps almost-white pixels to pure white (curve filled in by js/ui.js from art/manifest.js) -->
+    <filter id="clean" color-interpolation-filters="sRGB">
+      <feComponentTransfer>
+        <feFuncR class="white-fn" type="table"/><feFuncG class="white-fn" type="table"/><feFuncB class="white-fn" type="table"/>
+      </feComponentTransfer>
+    </filter>
+    <!-- clean whites + wobble, for still images -->
+    <filter id="boil-clean" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB">
+      <feComponentTransfer result="clean">
+        <feFuncR class="white-fn" type="table"/><feFuncG class="white-fn" type="table"/><feFuncB class="white-fn" type="table"/>
+      </feComponentTransfer>
+      <feTurbulence class="boil-noise" type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="1" result="noise"/>
+      <feDisplacementMap in="clean" in2="noise" scale="3.5" xChannelSelector="R" yChannelSelector="G"/>
     </filter>
   </svg>
 

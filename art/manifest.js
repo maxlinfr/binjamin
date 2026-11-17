@@ -18,23 +18,43 @@
 //
 // Tips: transparent background, roughly square, ~800px is plenty.
 
+const H = 'hamster images/';
+
 export default {
   states: {
-    loading: [],   // sleepy / waking up
-    idle: [],      // bored, eyes darting
-    noticed: [],   // perks up, leans in
-    examining: [], // squinting, magnifying glass, sweating
-    recycle: [],   // pointing HARD at the recycle side
-    landfill: [],  // pointing at the landfill side
-    confused: [],  // spiral eyes, question marks (also points at landfill)
-    happy: [],     // ecstatic, sparkles  ("W")
-    sad: [],       // devastated, one tear ("bro.")
-    nottrash: [],  // "bro that's your phone" (falls back to confused)
+    loading: [H + 'sleepy hamster.gif'],       // sleepy / waking up
+    idle: [H + 'plotting hamster.gif'],         // bored, eyes darting
+    noticed: [H + 'staring hamster.jpg'],     // perks up, leans in
+    examining: [H + 'examining hamster.gif'],  // squinting, magnifying glass, sweating
+    recycle: [H + 'recycling hamster.jpg'],    // pointing HARD at the recycle side
+    landfill: [H + 'landfill hamster.jpg'],    // pointing at the landfill side
+    confused: [H + 'confused hamster.gif'],    // spiral eyes, question marks (also points at landfill)
+    happy: [H + 'happy hamster.gif'],      // ecstatic, sparkles  ("W")  <- TODO: needs its own image
+    sad: [H + 'sad hamster.jpg'],              // devastated, one tear ("bro.")
+    nottrash: [H + 'serious hamster.jpg'],     // "bro that's your phone" (falls back to confused)
   },
 
-  // Draw your recycle / landfill / confused pointing poses pointing this way.
-  // Binjamin gets mirrored automatically when he needs to point the other way.
+  // Mirror the recycle / landfill / confused art so he faces the right bin?
+  // Only makes sense if those drawings actually point somewhere.
+  mirrorPointing: false,
+  // If mirroring: draw your pointing poses pointing this way.
   pointingDrawnFacing: 'left',
+
+  // Page look:
+  //   'white'    = plain white page. White-background JPGs/memes blend right in.
+  //   'notebook' = cream lined notebook paper. White-background images get their
+  //                edges faded in a soft oval so there's no white box (see fadeEdges).
+  background: 'white',
+  // Only used with 'notebook'. Set false if your art has transparent backgrounds.
+  fadeEdges: true,
+
+  // Snap almost-white pixels to pure white, so slightly grey/cream image backgrounds
+  // disappear into the page. Number = how "white" a pixel must be (0-1) to get snapped:
+  //   0.92 = gentle, 0.85 = aggressive (may start eating light pinks). false = off.
+  cleanWhites: 0.9,
+
+  // States where Binjamin flips back and forth like he's looking around.
+  lookAround: ['idle'],
 
   // Hand-drawn lettering. null = rendered in a scribbly font instead.
   title: null,          // e.g. 'art/title.png'          -> "binjamin"

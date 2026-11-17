@@ -47,7 +47,10 @@ export class Setup {
   }
 
   ui(art, title, text, buttons, { preview = false, meter = false } = {}) {
-    $('setup-hamster').src = pickArt(art, settings.recycleSide).frames[0];
+    const pic = pickArt(art, settings.recycleSide);
+    $('setup-hamster').src = pic.frames[0];
+    $('setup-hamster').classList.toggle('blend', !!pic.blend);
+    $('setup-hamster').classList.toggle('clean', !!pic.clean);
     $('setup-title').textContent = title;
     $('setup-text').textContent = text;
     $('setup-preview-wrap').hidden = !preview;
