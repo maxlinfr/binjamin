@@ -1,0 +1,9 @@
+{
+  "name": "binjamin",
+  "short_name": "binjamin",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#fffdf6",
+  "theme_color": "#fffdf6"
+}

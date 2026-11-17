@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="binjamin">
+  <meta name="theme-color" content="#fffdf6">
+  <title>binjamin</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Caveat+Brush&family=Gochi+Hand&family=Permanent+Marker&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- "line boil" filter: makes lettering wobble like hand-drawn animation -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <filter id="boil" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence id="boil-noise" type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="1" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.5" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </svg>
+
+  <main id="stage" data-state="loading">
+    <header id="title" class="boil"><span>binjamin</span></header>
+
+    <div id="arrow-left" class="verdict-arrow left">
+      <div class="arrow-art"></div>
+      <div class="label boil"></div>
+    </div>
+
+    <div id="center">
+      <div id="speech" class="boil"><span id="speech-text"></span></div>
+      <div id="hamster-wrap"><img id="hamster" alt="binjamin the hamster"></div>
+      <div id="subline"></div>
+    </div>
+
+    <div id="arrow-right" class="verdict-arrow right">
+      <div class="arrow-art"></div>
+      <div class="label boil"></div>
+    </div>
+
+    <footer id="instructions" class="boil"></footer>
+  </main>
+
+  <!-- camera feed (kept in the DOM but invisible; iOS stops updating display:none videos) -->
+  <video id="cam" playsinline muted autoplay></video>
+
+  <section id="setup" hidden>
+    <div class="setup-card">
+      <img id="setup-hamster" alt="">
+      <h2 id="setup-title"></h2>
+      <p id="setup-text"></p>
+      <div id="setup-preview-wrap" hidden>
+        <canvas id="setup-preview" width="640" height="480"></canvas>
+        <div id="wave-meter" hidden><span class="l">L</span><div class="bar"><div class="fill"></div></div><span class="r">R</span></div>
+      </div>
+      <div id="setup-buttons"></div>
+    </div>
+  </section>
+
+  <button id="wake" class="scribble-btn big" hidden>tap to wake binjamin</button>
+
+  <div id="debug" hidden>
+    <canvas id="debug-canvas" width="320" height="240"></canvas>
+    <pre id="debug-text"></pre>
+    <div id="dev-buttons"></div>
+  </div>
+
+  <!-- hidden hot corners: triple-tap top-left = debug, triple-tap top-right = setup -->
+  <div id="corner-tl" class="hotcorner"></div>
+  <div id="corner-tr" class="hotcorner"></div>
+  <div id="toast"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
